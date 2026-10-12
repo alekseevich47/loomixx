@@ -413,7 +413,8 @@ html:has(.site-shell--home) body {
   background:transparent;
   opacity:0;
 }
-.hero-orbit__video--active { opacity:1; z-index:1; }
+.hero-orbit__video--active,
+.hero-orbit__video.is-ready { opacity:1; z-index:1; }
 .hero-orbit__video--idle { opacity:0; z-index:0; }
 .hero-orbit__glow {
   position:absolute;

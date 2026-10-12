@@ -1,19 +1,35 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import heroOrbitLoop from '@assets/hero-orbit-1007-3-compressed.mp4';
 import masterImg from '@assets/hero-orbit-master.jpg';
 import { markHeroMediaReady } from '@/lib/hero-media-ready';
+import { ensureHeroVideoCached } from '@/lib/hero-video-cache';
 
 /**
- * TEMP: motion-блок = одно зацикленное видео (1007(3).mp4).
- * Сигналит splash через markHeroMediaReady, когда медиа можно показывать.
+ * Hero motion = зацикленное видео.
+ * src из Cache Storage (blob URL); кадр скрыт до canplaythrough.
  */
 export function HeroOrbitScene() {
   const reduceMotion = useReducedMotion();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [frameReady, setFrameReady] = useState(false);
 
   useEffect(() => {
     if (reduceMotion) return;
+
+    let cancelled = false;
+    void ensureHeroVideoCached(heroOrbitLoop).then((url) => {
+      if (!cancelled) setVideoSrc(url);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reduceMotion]);
+
+  useEffect(() => {
+    if (reduceMotion || !videoSrc) return;
 
     const video = videoRef.current;
     if (!video) return;
@@ -21,11 +37,15 @@ export function HeroOrbitScene() {
     video.muted = true;
 
     const ready = () => {
+      setFrameReady(true);
       markHeroMediaReady();
       void video.play().catch(() => undefined);
     };
 
-    const onError = () => markHeroMediaReady();
+    const onError = () => {
+      setFrameReady(true);
+      markHeroMediaReady();
+    };
 
     if (video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
       ready();
@@ -38,7 +58,7 @@ export function HeroOrbitScene() {
       video.removeEventListener('canplaythrough', ready);
       video.removeEventListener('error', onError);
     };
-  }, [reduceMotion]);
+  }, [reduceMotion, videoSrc]);
 
   if (reduceMotion) {
     return (
@@ -58,20 +78,22 @@ export function HeroOrbitScene() {
   return (
     <div className="hero-orbit hero-orbit--video" aria-label="Анимированная иллюстрация продуктовой студии">
       <div className="hero-orbit__video-feather">
-        <video
-          ref={videoRef}
-          className="hero-orbit__video hero-orbit__video--active"
-          src={heroOrbitLoop}
-          muted
-          playsInline
-          autoPlay
-          loop
-          preload="auto"
-          disablePictureInPicture
-          controlsList="nodownload nofullscreen noremoteplayback"
-          tabIndex={-1}
-          aria-hidden="true"
-        />
+        {videoSrc ? (
+          <video
+            ref={videoRef}
+            className={`hero-orbit__video${frameReady ? ' hero-orbit__video--active is-ready' : ''}`}
+            src={videoSrc}
+            muted
+            playsInline
+            autoPlay
+            loop
+            preload="auto"
+            disablePictureInPicture
+            controlsList="nodownload nofullscreen noremoteplayback"
+            tabIndex={-1}
+            aria-hidden="true"
+          />
+        ) : null}
       </div>
     </div>
   );

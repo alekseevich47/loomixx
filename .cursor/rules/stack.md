@@ -141,13 +141,14 @@ Loomixx — публичный сайт продуктовой студии: л�
 - **Главная `/` — только hero-экран:** `Shell home` → `.site-shell--home` + `.home-main` + `.hero.hero-screen`. Без нижних секций, без Footer. Страница **не скроллится** (`overflow:hidden` на html/body при `:has(.site-shell--home)`).
 - Правый блок hero: `HeroOrbitScene` (`src/components/hero-orbit-scene.tsx`) — ноутбук + орбита сателлитов (`</>`, code editor, slime-mark, phone, post) + lime rings/spheres на framer-motion; `useReducedMotion` → статика; стили `.hero-orbit*`. About по-прежнему использует старый `.orbit` / `.art-core`.
 - **Splash / loading** (`SplashScreen` в `App`, поверх роутера, `src/components/splash-screen.tsx`):
-  - один раз за вкладку (`sessionStorage` ключ `loomixx-splash`); повторный вход в ту же сессию — skip;
-  - сценарий: fade-in → slime-mark (`.splash .splash-mark.ai-brand-mark` ~120–168px; важна специфичность поверх `.ai-brand-mark` 28px) → **BlurText** «loomixx» (`delay={150}`, `animateBy="letters"`, `direction="top"`) → hold → **exit по порядку**: 1) reverse BlurText → 2) logo/slime уходит **последним** → 3) fade оверлея → 4) плавный reveal `.site-shell` (`html.splash-reveal`, opacity ~0.7s, без transform — sticky);
-  - reverse стартует когда **готово hero-видео** на `/` (`canplaythrough` → `markHeroMediaReady` в `HeroOrbitScene`, событие `loomixx:hero-media-ready` / `data-hero-media=ready`; модуль `src/lib/hero-media-ready.ts`) **и** доигран enter BlurText; timeout 12с; не `/` — сразу ready; reduced-motion — `onLoad` постера;
-  - `html.splash-active` блокирует scroll и держит `.site-shell` невидимым; `data-splash=pending|done` + событие `loomixx:splash-done`;
-  - `AiDock` авто-open на `/` стартует **после** splash-done (таймер 3с не пересекается со splash);
-  - `BlurText` — `src/components/BlurText.tsx` (React Bits BlurText TS-TW на framer-motion + props `exiting` / `onExitComplete` для reverse);
-  - стили: `.splash` / `.splash-inner` / `.splash-mark` / `.splash-word` / `.blur-text` в `index.css`; адаптив через `clamp`, safe-area; `prefers-reduced-motion` — короткий показ.
+  - на **каждый hard load** документа (нет sessionStorage-skip); SPA-переходы (в т.ч. на `/`) splash не показывают — `App`/`SplashScreen` не remount;
+  - сценарий: fade-in → slime-mark (`.splash .splash-mark.ai-brand-mark` ~120–168px; специфичность поверх `.ai-brand-mark` 28px) → **BlurText** «loomixx» (`delay={150}`, `animateBy="letters"`, `direction="top"`) → hold → **exit**: 1) reverse BlurText → 2) logo последним → 3) fade оверлея → 4) reveal `.site-shell` (`html.splash-reveal`, opacity ~0.7s, без transform);
+  - **`/`:** reverse только после `videoReady` (`canplaythrough` / cache blob → `markHeroMediaReady`, событие `loomixx:hero-media-ready`) **и** enter BlurText; safety timeout 15с; сайт под `splash-active` скрыт — пустой слот видео не виден;
+  - **не `/`:** splash без ожидания видео; фоновый `preloadHeroVideo`; страница после анимации;
+  - **кэш видео:** `src/lib/hero-video-cache.ts` — Cache Storage `loomixx-hero-v1` → blob URL; `HeroOrbitScene` берёт src из кэша, кадр `opacity:0` до `.is-ready` / `--active`; reduced-motion — постер + `onLoad`;
+  - `html.splash-active` блокирует scroll + `.site-shell` невидим; `data-splash=pending|done` + `loomixx:splash-done`;
+  - `AiDock` авто-open на `/` после splash-done;
+  - `BlurText` — `src/components/BlurText.tsx`; стили `.splash*` / `.blur-text` в `index.css`.
 - **AI-ассистент** (`AiDock` в `Shell` на всех страницах, `src/components/ai-assistant.tsx`):
   - старт: анимированный logo (`.ai-fab` + slime) **по центру снизу**;
   - авто-раскрытие панели **только на `/`** (через 3с **после** splash); на остальных — каждые 5с nudge «тык-тык» (`.ai-fab.is-nudge`), пока закрыт;

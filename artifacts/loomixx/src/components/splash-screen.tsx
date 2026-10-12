@@ -1,76 +1,52 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import BlurText from '@/components/BlurText';
-import {
-  markHeroMediaReady,
-  waitForHeroMediaReady,
-} from '@/lib/hero-media-ready';
+import { waitForHeroMediaReady } from '@/lib/hero-media-ready';
+import { preloadHeroVideo } from '@/lib/hero-video-cache';
+import heroOrbitLoop from '@assets/hero-orbit-1007-3-compressed.mp4';
 
-const SPLASH_KEY = 'loomixx-splash';
 const EASE = [0.22, 1, 0.36, 1] as const;
 export const SPLASH_DONE_EVENT = 'loomixx:splash-done';
 
 function markSplashDone() {
-  try {
-    sessionStorage.setItem(SPLASH_KEY, '1');
-  } catch {
-    /* sessionStorage unavailable */
-  }
   document.documentElement.dataset.splash = 'done';
   document.documentElement.classList.remove('splash-active');
   document.documentElement.classList.add('splash-reveal');
   window.dispatchEvent(new CustomEvent(SPLASH_DONE_EVENT));
 }
 
-function shouldShowSplash() {
-  try {
-    return sessionStorage.getItem(SPLASH_KEY) !== '1';
-  } catch {
-    return true;
-  }
-}
-
-/** Главная с видео: pathname без base (wouter base уже срезан в history). */
+/** Главная с видео: pathname без base. */
 function isHomePath() {
   const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
   const path = window.location.pathname.replace(/\/$/, '') || '/';
-  const stripped = base && path.startsWith(base) ? path.slice(base.length) || '/' : path;
+  const stripped =
+    base && path.startsWith(base) ? path.slice(base.length) || '/' : path;
   return stripped === '/' || stripped === '';
 }
 
 /**
- * Splash: slime → BlurText → exit текста → logo последним → reveal главной.
+ * Splash на каждый hard load документа (SPA-навигация не remount'ит App).
+ * `/` — exit после videoReady + BlurText; иначе — только анимация + preload видео.
  */
 export function SplashScreen() {
   const reduceMotion = useReducedMotion();
-  const [enabled] = useState(() => {
-    const show = shouldShowSplash();
-    if (show) {
-      document.documentElement.dataset.splash = 'pending';
-      document.documentElement.classList.add('splash-active');
-    } else {
-      document.documentElement.dataset.splash = 'done';
-    }
-    return show;
+  const [isHome] = useState(() => {
+    document.documentElement.dataset.splash = 'pending';
+    document.documentElement.classList.add('splash-active');
+    return isHomePath();
   });
-  const [mounted, setMounted] = useState(enabled);
+
+  const [mounted, setMounted] = useState(true);
   const [showText, setShowText] = useState(false);
-  const [videoReady, setVideoReady] = useState(false);
+  const [videoReady, setVideoReady] = useState(!isHome);
   const [textDone, setTextDone] = useState(false);
   const [textExiting, setTextExiting] = useState(false);
   const [textExitDone, setTextExitDone] = useState(false);
   const [slimeExiting, setSlimeExiting] = useState(false);
 
   useEffect(() => {
-    if (!enabled) {
-      window.dispatchEvent(new CustomEvent(SPLASH_DONE_EVENT));
-      return;
-    }
-
-    // Не главная — hero-видео нет, не блокируем exit
-    if (!isHomePath()) {
-      markHeroMediaReady();
-      setVideoReady(true);
+    if (!isHome) {
+      preloadHeroVideo(heroOrbitLoop);
       return;
     }
 
@@ -81,35 +57,33 @@ export function SplashScreen() {
 
     return () => {
       ac.abort();
-      document.documentElement.classList.remove('splash-active');
     };
-  }, [enabled]);
+  }, [isHome]);
 
   useEffect(() => {
-    if (!enabled) return;
     const id = window.setTimeout(
       () => setShowText(true),
       reduceMotion ? 40 : 720,
     );
     return () => window.clearTimeout(id);
-  }, [enabled, reduceMotion]);
+  }, [reduceMotion]);
 
   useEffect(() => {
-    if (!enabled || !reduceMotion || !showText) return;
+    if (!reduceMotion || !showText) return;
     setTextDone(true);
-  }, [enabled, reduceMotion, showText]);
+  }, [reduceMotion, showText]);
 
-  // 1) reverse текста — после BlurText enter И готовности hero-видео
+  // reverse: home — textDone + videoReady; не home — только textDone
   useEffect(() => {
-    if (!enabled || textExiting || !textDone || !videoReady) return;
+    if (textExiting || !textDone) return;
+    if (isHome && !videoReady) return;
     const id = window.setTimeout(
       () => setTextExiting(true),
       reduceMotion ? 80 : 420,
     );
     return () => window.clearTimeout(id);
-  }, [enabled, textExiting, textDone, videoReady, reduceMotion]);
+  }, [textExiting, textDone, videoReady, isHome, reduceMotion]);
 
-  // 2) после текста — уход логотипа (последним)
   useEffect(() => {
     if (!textExitDone || slimeExiting) return;
     const id = window.setTimeout(
@@ -118,8 +92,6 @@ export function SplashScreen() {
     );
     return () => window.clearTimeout(id);
   }, [textExitDone, slimeExiting, reduceMotion]);
-
-  if (!enabled) return null;
 
   return (
     <AnimatePresence onExitComplete={markSplashDone}>
@@ -153,7 +125,6 @@ export function SplashScreen() {
                 ease: EASE,
               }}
               onAnimationComplete={() => {
-                // logo ушёл последним → снимаем оверлей → reveal главной
                 if (slimeExiting) setMounted(false);
               }}
             >

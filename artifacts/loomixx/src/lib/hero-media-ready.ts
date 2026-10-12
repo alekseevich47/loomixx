@@ -7,9 +7,10 @@ export function markHeroMediaReady() {
   window.dispatchEvent(new CustomEvent(HERO_MEDIA_READY_EVENT));
 }
 
+/** Safety timeout на `/` (~15с). Ready ставит только HeroOrbitScene / poster. */
 export function waitForHeroMediaReady(
   signal: AbortSignal,
-  timeoutMs = 12000,
+  timeoutMs = 15000,
 ): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted || document.documentElement.dataset.heroMedia === 'ready') {
