@@ -1,0 +1,197 @@
+---
+description: Loomixx studio site — architecture, stack, patterns and agent rules
+alwaysApply: true
+---
+
+# Loomixx — Stack (Studio Website)
+
+## Product
+
+Loomixx — публичный сайт продуктовой студии: лендинг, услуги, портфолио концептов, «О студии», контакт.
+Язык UI — **русский**. Позиционирование: под задачу клиента, сайты / веб-приложения / мини-приложения (мессенджеры).
+
+Это **не** Beauty+ mini-app/CRM. Beauty+ описан отдельно в `stack_app.md` и живёт в другом контуре/репо-плане.
+
+На старте сайт — маркетинговый SPA с локальными данными. Контактная форма **демо**: не отправляет на сервер (только локальный success-state). API минимальный (`/api/healthz`). БД-схема пустая — задел под будущие сущности (лиды, проекты и т.п.).
+
+## Architecture
+
+- **Монорепо:** `pnpm` workspaces (`artifacts/*`, `lib/*`, `scripts`). Каталог версий — `pnpm-workspace.yaml` → `catalog:`.
+- **Contract-first API:** `lib/api-spec/openapi.yaml` → Orval → `@workspace/api-zod` + `@workspace/api-client-react`.
+- **Frontend SPA** обслуживается Vite; API — отдельный Express-процесс, префикс `/api`.
+- **БД:** PostgreSQL + Drizzle (`@workspace/db`); пока без таблиц — подключать только когда появляется реальная модель.
+
+### Apps / packages
+
+| Path | Package | Role |
+| ---- | ------- | ---- |
+| `artifacts/loomixx` | `@workspace/loomixx` | Публичный сайт студии (основной продукт этого репо) |
+| `artifacts/api-server` | `@workspace/api-server` | Express API (`/api/*`) |
+| `artifacts/mockup-sandbox` | `@workspace/mockup-sandbox` | Песочница мокапов (dev), не прод-сайт |
+| `lib/api-spec` | `@workspace/api-spec` | OpenAPI + Orval codegen |
+| `lib/api-zod` | `@workspace/api-zod` | Zod-схемы/типы с сервера (generated) |
+| `lib/api-client-react` | `@workspace/api-client-react` | TanStack Query hooks + `customFetch` (generated) |
+| `lib/db` | `@workspace/db` | Drizzle schema + `db` pool |
+| `scripts` | — | Утилиты воркспейса |
+
+### Routing (frontend)
+
+| Path | Page |
+| ---- | ---- |
+| `/` | Главная |
+| `/services` | Услуги |
+| `/projects` | Список проектов (+ фильтр категорий) |
+| `/projects/:slug` | Карточка концепта |
+| `/about` | Студия |
+| `/contact` | Контакт (демо-форма) |
+| `*` | 404 |
+
+Роутер: **wouter** (`WouterRouter` + `base` из `import.meta.env.BASE_URL` + `hook={useViewTransitionLocation}`). Layout: **один** `Shell` над `Switch` = Header + outlet (`main` страницы) + Footer (+ `AiDock` всегда); страницы рендерят только `<main>`, без собственного `Shell`. На `/` — `Shell home={true}` без Footer (`location === '/'`).
+
+**Page transitions:** View Transitions API (`document.startViewTransition` + `flushSync`) через [`src/hooks/use-view-transition-location.ts`](artifacts/loomixx/src/hooks/use-view-transition-location.ts). Soft cross-fade контента (~240ms); chrome изолирован `view-transition-name` на `.topbar` / `.footer` / `.ai-dock`. Нет API или `prefers-reduced-motion` → мгновенная смена (chrome всё равно без remount). Не подключать React canary `<ViewTransition>`. Не вешать `transform`/`filter` на `.site-shell` ради анимации роута (ломает sticky). Scroll-to-top на смене `location` в `Router`.
+
+**Sticky header (все страницы):** `Header` рендерится из `Shell` → sticky на всём сайте.
+- Разметка: `.topbar` (full-bleed, `position:sticky; top:0`) + `.topbar-inner.container-wide` (flex-ряд brand / nav / actions).
+- Фон: `hsl(var(--background) / .88)` + `backdrop-filter: blur(14px)` — контент читаем при прокрутке под шапкой.
+- Высота in-flow: **82px** desktop / **70px** ≤620px — `home-main` по-прежнему `calc(100dvh - …)`; не переводить шапку на `position:fixed` без пересчёта.
+- Критично: у `.site-shell` только `overflow-x:clip` (не `overflow:hidden`) — иначе sticky отвязывается от viewport. У `.site-shell--home` `overflow:hidden` остаётся (страница без скролла).
+- z-index: `.topbar` = 30 (ниже `AiDock` = 40); мобильное меню — absolute внутри `.topbar-inner`.
+
+### API
+
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| GET | `/api/healthz` | Health; ответ валидируется Zod (`HealthCheckResponse`) |
+
+Новые эндпоинты: сначала OpenAPI → `pnpm --filter @workspace/api-spec run codegen` → реализация в `artifacts/api-server/src/routes/*` + подключение в `routes/index.ts`.
+
+## Stack
+
+### Frontend (`artifacts/loomixx`)
+
+| Area | Choice |
+| ---- | ------ |
+| Framework | React 19 + TypeScript 5.9 |
+| Bundler | Vite 7 (`PORT`, `BASE_PATH` обязательны) |
+| Routing | wouter |
+| Styles | Tailwind CSS v4 + кастомный бренд-CSS в `src/index.css` |
+| UI kit | shadcn/ui (style `new-york`, Radix) в `src/components/ui/*` |
+| Server state | TanStack Query (`QueryClientProvider` уже в `App`) |
+| Forms | React Hook Form + Zod (готово в deps; контакт пока нативный form) |
+| Icons | lucide-react |
+| Motion | framer-motion — `HeroRotatingPhrase`; **SplashScreen** (вход); **BlurText** (react-bits); AI dock open/close; AI placeholder typewriter (`useTypewriterPlaceholder`: старт с пустой строки, печать только после open/`enabled`); `useReducedMotion` везде; **route transitions** — View Transitions API (`useViewTransitionLocation`), не AnimatePresence на страницах; прочие UI — CSS transitions |
+| Theme | class `dark` на `<html>`, ключ `localStorage`: `loomixx-theme` |
+
+**Шрифты:** Unbounded (display/brand), Manrope (body), DM Mono (eyebrows/meta).  
+**Алиасы:** `@` → `src`, `@assets` → `attached_assets`.
+
+### Backend (`artifacts/api-server`)
+
+| Area | Choice |
+| ---- | ------ |
+| Runtime | Node.js + TypeScript |
+| Framework | Express 5 |
+| Logging | pino + pino-http |
+| Validation | Zod из `@workspace/api-zod` (не дублировать схемы вручную) |
+| Build | esbuild → CJS/ESM bundle (`build.mjs` → `dist/index.mjs`) |
+| CORS | `cors()` (на старте открытый; ужесточать при выносе в прод) |
+
+### Data / contracts
+
+- **OpenAPI 3.1** — единственный source of truth для публичных контрактов (`title` должен оставаться `Api` — иначе ломаются пути Orval).
+- **Zod:** catalog `zod` ^3; Orval zod output pinned to v3.
+- **PostgreSQL + Drizzle** — когда появятся таблицы: модели в `lib/db/src/schema/*`, реэкспорт из `schema/index.ts`, apply через `pnpm --filter @workspace/db run push` (dev).
+- Env: `DATABASE_URL` (db), `PORT` (оба процесса), `BASE_PATH` (frontend Vite).
+
+### Tooling / supply chain
+
+- Только **pnpm** (`preinstall` блокирует npm/yarn).
+- `minimumReleaseAge: 1440` в `pnpm-workspace.yaml` — не отключать.
+- Typecheck: `pnpm run typecheck` (libs project refs + artifacts).
+- Корень Replit-ориентирован; артефакты описаны в `artifacts/*/.replit-artifact/artifact.toml`.
+
+## UI / brand patterns
+
+- Бренд-сигнал: слово **loomixx** + mark `l` (lime, скошенный круг) — hero-level, не только nav.
+- **Favicon / tab icon:** `artifacts/loomixx/public/favicon.svg` — SVG mark бренда (`#b8e35e` slime + ink `l`, rotate −10°, как `.brand-mark` / `.ai-brand-mark`). Подключение в `index.html`: `rel="icon"` (`sizes="any"`) + `apple-touch-icon`. Не возвращать оранжевую Replit-заглушку; буква в SVG — path (без внешних шрифтов).
+- Hero на `/`: **без** eyebrow-текста («Независимая продуктовая студия» убрана). Отступ header → «Цифровые вещи» держит пустой слот `.hero-eyebrow-slot` (та же in-flow высота, что у `.eyebrow` + status-dot), не сжимать margin/padding взамен без пересчёта.
+- Hero headline: фиксированное «Цифровые вещи» + автосмена хвоста через `HeroRotatingPhrase` (`src/components/hero-rotating-phrase.tsx`):
+  - фразы: «со смыслом», «с душой», «для бизнеса», «с характером», «без лишнего»;
+  - слот `.hero-rotate` / `.hero-rotate-measure` = ширина самой длинной фразы — стабильные переносы, без прыжка вёрстки;
+  - анимация: framer-motion `AnimatePresence mode="wait"`, уважает `prefers-reduced-motion` / `useReducedMotion`.
+- Hero copy (`.hero-copy`): «От идеи до готового продукта» + обязательный `<br />` + «— проектируем и создаём цифровые продукты, которыми действительно удобно пользоваться.»
+- Hero note (`.hero-note`): «ПОД ВАШУ ЗАДАЧУ · ВНИМАНИЕ К КАЖДОМУ ШАГУ» — клиентоориентированный сигнал, не про размер команды.
+- **Главная `/` — только hero-экран:** `Shell home` → `.site-shell--home` + `.home-main` + `.hero.hero-screen`. Без нижних секций, без Footer. Страница **не скроллится** (`overflow:hidden` на html/body при `:has(.site-shell--home)`).
+- Правый блок hero: `HeroOrbitScene` (`src/components/hero-orbit-scene.tsx`) — ноутбук + орбита сателлитов (`</>`, code editor, slime-mark, phone, post) + lime rings/spheres на framer-motion; `useReducedMotion` → статика; стили `.hero-orbit*`. About по-прежнему использует старый `.orbit` / `.art-core`.
+- **Splash / loading** (`SplashScreen` в `App`, поверх роутера, `src/components/splash-screen.tsx`):
+  - один раз за вкладку (`sessionStorage` ключ `loomixx-splash`); повторный вход в ту же сессию — skip;
+  - сценарий: fade-in → slime-mark (`.splash .splash-mark.ai-brand-mark` ~120–168px; важна специфичность поверх `.ai-brand-mark` 28px) → **BlurText** «loomixx» (`delay={150}`, `animateBy="letters"`, `direction="top"`) → hold → **exit по порядку**: 1) reverse BlurText → 2) logo/slime уходит **последним** → 3) fade оверлея → 4) плавный reveal `.site-shell` (`html.splash-reveal`, opacity ~0.7s, без transform — sticky);
+  - reverse стартует когда **готово hero-видео** на `/` (`canplaythrough` → `markHeroMediaReady` в `HeroOrbitScene`, событие `loomixx:hero-media-ready` / `data-hero-media=ready`; модуль `src/lib/hero-media-ready.ts`) **и** доигран enter BlurText; timeout 12с; не `/` — сразу ready; reduced-motion — `onLoad` постера;
+  - `html.splash-active` блокирует scroll и держит `.site-shell` невидимым; `data-splash=pending|done` + событие `loomixx:splash-done`;
+  - `AiDock` авто-open на `/` стартует **после** splash-done (таймер 3с не пересекается со splash);
+  - `BlurText` — `src/components/BlurText.tsx` (React Bits BlurText TS-TW на framer-motion + props `exiting` / `onExitComplete` для reverse);
+  - стили: `.splash` / `.splash-inner` / `.splash-mark` / `.splash-word` / `.blur-text` в `index.css`; адаптив через `clamp`, safe-area; `prefers-reduced-motion` — короткий показ.
+- **AI-ассистент** (`AiDock` в `Shell` на всех страницах, `src/components/ai-assistant.tsx`):
+  - старт: анимированный logo (`.ai-fab` + slime) **по центру снизу**;
+  - авто-раскрытие панели **только на `/`** (через 3с **после** splash); на остальных — каждые 5с nudge «тык-тык» (`.ai-fab.is-nudge`), пока закрыт;
+  - клик **вне** блока → схлапывание в logo; клик по logo → открыть;
+  - chips через `suggestionsForPath`; поле + кастомный скролл + slime send — как раньше;
+  - placeholder typewriter: при открытии панели текст **пустой**, затем печатается (`useState('')` + reset при `!enabled`); не инициализировать `phrases[0]` — иначе полный плейсхолдер мелькает до старта анимации; `prefers-reduced-motion` → сразу первая фраза;
+  - user-msg `max-width:75%`, assistant = ширина строки, max 3 строки;
+  - SelectionBrush `z-index:50` + `mix-blend-mode`; fallback → `@alekseevich47` / `loomixx.dev@yandex.ru`.
+- **Sticky header** — см. Routing; править только `.topbar` / `.topbar-inner` в `index.css` + разметку `Header` в `App.tsx`; не вешать sticky на отдельные страницы.
+- **Shared Shell** — не возвращать `<Shell>` внутрь page-компонентов; иначе снова remount Header/AiDock и ломается бесшовный переход.
+- Визуальный язык: тёплый paper (`--paper` / cream background), ink, lime accent (`--lime` / primary green), orange accent; display-типографика Unbounded с сильным negative tracking.
+- Страницы — **кастомные классы** в `index.css` (`hero`, `project-card`, `cta-band`…), не обязательно через shadcn Card.
+- shadcn — для интерактивных примитивов (dialog, form controls, toast), не для «карточек ради карточек» на маркетинге.
+- Особенность UX: `SelectionBrush` (`App.tsx`) — кастомное выделение текста «мазок кисти»:
+  - native `::selection` скрывается при активном brush (`html.selection-brush-active`);
+  - подсветка = SVG overlay по `Range.getClientRects()` (линии мержатся);
+  - геометрия: Catmull–Rom → cubic Bézier силуэт + мягкие tapered wisps на краях;
+  - лёгкий `feTurbulence` + `feDisplacementMap` (`#selection-brush-soft`) для органической кромки;
+  - классы: `.selection-brush-layer` (`z-index:50`, `mix-blend-mode:multiply` / dark `soft-light`), `.selection-brush-path`, `.selection-brush-path--wisp`;
+  - для AI: `contenteditable` + `.ai-msg-body` — DOM Range; brush поверх оверлея.
+- Тесты/e2e-хуки: стабильные `data-testid` на ключевых ссылках и форме (`link-brand`, `form-contact`, …).
+- Контент портфолио сейчас **захардкожен** в `App.tsx` (`projects`, `serviceItems`) — при росте вынести в модуль данных / API, не размазывать по компонентам.
+- `serviceItems` 03: **Мини-приложения** (не нативные iOS/Android) — заказы/записи/каталоги/ЛК в мессенджере; details: сценарии взаимодействия, дизайн мини-приложения, интеграции с CRM и сервисами.
+
+## Security
+
+- Секреты и connection strings только через env, не в репо.
+- Весь ввод API — через Zod (generated или согласованные схемы).
+- ORM (Drizzle) против SQL-injection; XSS — не рендерить сырой HTML из пользовательского ввода.
+- Когда форма контакта станет реальной: rate limit, honeypot/CAPTCHA по необходимости, валидация на бэке, не доверять клиенту.
+- CORS и cookie-auth — осознанно ужесточать перед публичным деплоем (сейчас scaffold).
+
+## Optimization
+
+- Один основной бандл страниц сайта пока компактный; при росте — lazy routes (`React.lazy` + wouter) для тяжёлых страниц.
+- Изображения: WebP/AVIF, размеры под viewport; ассеты через `@assets` / CDN позже.
+- Не тянуть Recharts/Embla/тяжёлые ui-компоненты на лендинг без использования.
+- API: фоновые побочные эффекты (почта, CRM) — вне request path или через очередь, когда появятся.
+
+## Infra (текущее состояние)
+
+- Локально/Replit: два процесса — Vite frontend + Express API.
+- Прод-хост/домен сайта в этом репо **ещё не зафиксированы** (Beauty+ домены из `stack_app.md` сюда не переносить).
+- Observability на старте: pino на API; клиентский error boundary + console.
+- Документация операционки: по мере деплоя дополнять `replit.md` / `docs/*`.
+
+## Agent workflow
+
+1. UI-правки маркетинга → `artifacts/loomixx` (`App.tsx`, `src/index.css`, при необходимости компоненты).
+2. Новый API → OpenAPI → codegen → route + Zod parse ответа/тела.
+3. Новая таблица → `lib/db/src/schema/<name>.ts` → export → `db push` (dev).
+4. Не смешивать с Beauty+ архитектурой (NestJS, Centrifugo, Telegram initData, entitlements) — это другой продукт.
+5. После правок кода при наличии graphify: `graphify update .`.
+
+## Do / Don't
+
+- ✅ Держать OpenAPI актуальным; после изменений спеки — codegen.
+- ✅ Сохранять бренд-CSS и шрифты; новые секции в том же визуальном языке.
+- ✅ Честно помечать демо-поведение (как у контактной формы), пока нет бэка.
+- ✅ Использовать `@workspace/*` пакеты вместо копипасты типов/fetch.
+- ❌ Не подменять стек на Nest/Next/Turborepo «по привычке» из `stack_app.md`.
+- ❌ Не коммитить секреты; не отключать `minimumReleaseAge`.
+- ❌ Не выдавать концепты портфолио за клиентские кейсы в копирайте.
+- ❌ Не подключать `@workspace/db` в API «на будущее» без реальных запросов — пустой импорт уронит процесс без `DATABASE_URL`.

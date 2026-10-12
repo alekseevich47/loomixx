@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="loomixx">
+  <!-- Brand mark: lime slime + «l» (как .brand-mark / .ai-brand-mark), rotate -10° -->
+  <g transform="translate(16 16) rotate(-10)">
+    <!-- border-radius 50% 50% 50% 12% на квадрате 24×24 -->
+    <path
+      fill="#b8e35e"
+      d="M0-12A12 12 0 0 1 12 0A12 12 0 0 1 0 12H-9.12A2.88 2.88 0 0 1-12 9.12V0A12 12 0 0 1 0-12Z"
+    />
+    <!-- Unbounded-like bold «l» (path — без внешних шрифтов в favicon) -->
+    <rect x="-2.05" y="-7.6" width="4.1" height="15.2" rx="2.05" fill="#202633"/>
+  </g>
+</svg>
