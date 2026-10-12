@@ -35,12 +35,13 @@ if [[ ! -f "$API_DIST" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$API_ENV" ]]; then
+# Файл обычно chmod 600 — читаем через sudo, иначе ложный WARN у пользователя sa.
+if ! sudo test -f "$API_ENV"; then
   echo "WARN: нет $API_ENV — Люмик без DEEPSEEK_API_KEY уйдёт в soft fallback" >&2
-  echo "      создай файл (chmod 600) с:" >&2
+  echo "      создай файл (chmod 600, owner root) с:" >&2
   echo "      DEEPSEEK_API_KEY=sk-..." >&2
   echo "      DEEPSEEK_MODEL=deepseek-flash" >&2
-elif ! grep -qE '^DEEPSEEK_API_KEY=.+' "$API_ENV"; then
+elif ! sudo grep -qE '^DEEPSEEK_API_KEY=.+' "$API_ENV"; then
   echo "WARN: в $API_ENV пустой/нет DEEPSEEK_API_KEY — soft fallback" >&2
 fi
 
