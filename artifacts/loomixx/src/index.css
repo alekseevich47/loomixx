@@ -178,7 +178,13 @@ html.splash-reveal .site-shell {
 
 /* overflow-x:clip — без scrollport-предка, иначе position:sticky на .topbar ломается */
 .site-shell { position:relative;z-index:1;min-height:100dvh;overflow-x:clip;background:transparent;transition:color .35s; }
-.site-shell--home { height:100dvh;max-height:100dvh;overflow:hidden; }
+.site-shell--home { height:100dvh;max-height:100dvh;overflow:hidden; user-select:none; -webkit-user-select:none; }
+.site-shell--home .ai-msg,
+.site-shell--home .ai-msg *,
+.site-shell--home .ai-input {
+  user-select:text;
+  -webkit-user-select:text;
+}
 .home-main { height:calc(100dvh - 82px);max-height:calc(100dvh - 82px);overflow:visible; }
 html:has(.site-shell--home),
 html:has(.site-shell--home) body {
@@ -569,7 +575,41 @@ html:has(.site-shell--home) body {
   min-width:0;
   box-sizing:border-box;
 }
-/* Кастомный скролл без стрелок: нативный полностью скрыт */
+.ai-panel-header {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex:0 0 auto;
+  min-height:36px;
+  margin:-14px -14px 0;
+  padding:8px 14px;
+  border-bottom:1px solid hsl(var(--border));
+  border-radius:22px 22px 0 0;
+  background:hsl(var(--card));
+  user-select:none;
+  -webkit-user-select:none;
+}
+.ai-panel-header .ai-brand-mark {
+  width:22px;
+  height:22px;
+  font-size:12px;
+  flex:0 0 auto;
+}
+.ai-panel-title {
+  font-family:var(--app-font-display);
+  font-size:14px;
+  font-weight:700;
+  letter-spacing:-0.6px;
+  color:hsl(var(--foreground));
+}
+.ai-panel-status {
+  font-family:var(--app-font-mono);
+  font-size:10px;
+  letter-spacing:0.02em;
+  color:hsl(142 45% 38%);
+  opacity:.9;
+}
+/* Кастомный скролл: нативный скрыт; proximity ~14px; drag без выделения */
 .ai-scroll-host {
   position:relative;
   min-width:0;
@@ -588,23 +628,38 @@ html:has(.site-shell--home) body {
   top:2px;
   right:0;
   bottom:2px;
-  width:3px;
+  width:14px;
+  display:flex;
+  justify-content:flex-end;
   pointer-events:auto;
   border-radius:99px;
   background:transparent;
-  transition:width .22s ease;
-}
-.ai-scroll-rail:hover {
-  width:8px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .ai-scroll-rail { transition:none; }
+  user-select:none;
+  -webkit-user-select:none;
+  touch-action:none;
+  cursor:grab;
 }
 .ai-scroll-thumb {
-  width:100%;
+  width:3px;
   border-radius:99px;
   background:var(--lime);
-  will-change:transform;
+  will-change:transform,width;
+  transition:width .22s ease;
+  flex:0 0 auto;
+  pointer-events:auto;
+}
+.ai-scroll-host.is-scroll-near .ai-scroll-thumb,
+.ai-scroll-rail:hover .ai-scroll-thumb {
+  width:8px;
+}
+.ai-scroll-host.is-scroll-dragging .ai-scroll-rail,
+body.ai-scroll-dragging {
+  cursor:grabbing;
+  user-select:none !important;
+  -webkit-user-select:none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-scroll-thumb { transition:none; }
 }
 .ai-scroll-host--input .ai-scroll-rail { right:2px; }
 .ai-thread-scroll {
@@ -647,14 +702,14 @@ html:has(.site-shell--home) body {
   display:block;
   max-width:100%;
   min-width:0;
-  max-height:calc(13px * 1.55 * 6);
-  padding-right:8px;
   white-space:pre-wrap;
   overflow-wrap:anywhere;
   word-break:break-word;
   hyphens:auto;
+  user-select:text;
+  -webkit-user-select:text;
 }
-.ai-msg-loading .ai-scroll-host { flex:1 1 auto; min-width:0; }
+.ai-msg-loading .ai-msg-body { flex:1 1 auto; min-width:0; }
 .ai-msg-user {
   justify-self:end;
   background:hsl(var(--secondary));
@@ -683,6 +738,8 @@ html:has(.site-shell--home) body {
 }
 .ai-chip {
   appearance:none;
+  user-select:none;
+  -webkit-user-select:none;
   border:1px solid hsl(var(--border));
   background:hsl(var(--card));
   color:hsl(var(--foreground));

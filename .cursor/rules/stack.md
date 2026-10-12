@@ -71,6 +71,7 @@ Loomixx — публичный сайт продуктовой студии: л�
 - Контракт: `lib/api-spec/openapi.yaml` → schemas `AiChatRequest` / `AiChatAnswer` / `ApiErrorBody`.
 - Сервер: `artifacts/api-server/src/routes/ai.ts` + `src/ai/{system-prompt,knowledge}.ts` + `src/lib/{deepseek,rate-limit}.ts`.
 - Ключ **только на сервере**: `DEEPSEEK_API_KEY` (опц. `DEEPSEEK_MODEL`, default `deepseek-flash` / V4.1-Flash; `thinking: disabled` для быстрых ответов). Без ключа API отвечает fallback-текстом, фронт не падает.
+- Тон: пользователь = «босс»; при нехватке данных — «напишите моему боссу» + контакты (`src/ai/system-prompt.ts`).
 - Клиент: `aiChat` из `@workspace/api-client-react` в `AiPanel` (`ai-assistant.tsx`); при сетевой/5xx ошибке — локальный fallback с контактами.
 - Dev proxy: Vite `server.proxy["/api"]` → `API_PROXY_TARGET` (default `http://127.0.0.1:3001`). См. корневой `.env.example`.
 
@@ -151,11 +152,15 @@ Loomixx — публичный сайт продуктовой студии: л�
   - старт: анимированный logo (`.ai-fab` + slime) **по центру снизу**;
   - авто-раскрытие панели **только на `/`** (через 3с **после** splash); на остальных — каждые 5с nudge «тык-тык» (`.ai-fab.is-nudge`), пока закрыт;
   - клик **вне** блока → схлапывание в logo; клик по logo → открыть;
+  - **header панели** (`.ai-panel-header`, непрозрачный): slime-mark + «Люмик» + `(на связи)` (mono, слегка зелёный);
   - **история сессии:** `sessionStorage` ключ `loomixx-ai-history` (до закрытия вкладки); закрытие панели / смена страницы не сбрасывает диалог; при reopen — полный тред; лимит 40 сообщений; `.ai-thread-scroll` max-height `min(48vh, 420px)`;
   - chips через `suggestionsForPath`; поле + кастомный скролл + slime send — как раньше;
-  - кастомный скролл (`.ai-scroll-rail` / `.ai-scroll-thumb`): нативный скрыт; rail `pointer-events:auto`; hover → ширина 3→8px, `transition:width .22s ease` (off при `prefers-reduced-motion`);
+  - кастомный скролл: нативный скрыт; **proximity** ~14px у правого края (`is-scroll-near`) → thumb 3→8px; **drag** thumb/rail без text-selection (`body.ai-scroll-dragging`, `preventDefault` + clear selection); колесо над сообщениями крутит **тред** (без вложенного scroll в `.ai-msg-body`);
   - placeholder typewriter: при открытии панели текст **пустой**, затем печатается (`useState('')` + reset при `!enabled`); не инициализировать `phrases[0]` — иначе полный плейсхолдер мелькает до старта анимации; `prefers-reduced-motion` → сразу первая фраза;
-  - user-msg `max-width:75%`, assistant = ширина строки; `.ai-msg-body` max-height = **6 строк** (`calc(13px * 1.55 * 6)`);
+  - user-msg `max-width:75%`, assistant = ширина строки; текст сообщений растёт, скролл — у треда;
+  - **выделение:** `/` (`.site-shell--home`) — `user-select:none`, исключение только `.ai-msg` / `.ai-input`; SelectionBrush на home сбрасывает selection вне AI; chips/header/rail — без select;
+  - тон Люмика: пользователя называет «босс»; контакты — «напишите моему боссу…» (`system-prompt.ts` + fallback);
+  - loading: `AI_LOADING_PHRASES` (14 шт.), `useLoadingPhrase` — shuffle-колода на каждый busy, ротация без сразу-повтора на стыке;
   - SelectionBrush `z-index:50` + `mix-blend-mode`; ответы через `POST /api/ai/chat` (DeepSeek); fallback → `@alekseevich47` / `loomixx.dev@yandex.ru`; ссылки в ответе — `AiReplyText`.
 - **Sticky header** — см. Routing; править только `.topbar` / `.topbar-inner` в `index.css` + разметку `Header` в `App.tsx`; не вешать sticky на отдельные страницы.
 - **Shared Shell** — не возвращать `<Shell>` внутрь page-компонентов; иначе снова remount Header/AiDock и ломается бесшовный переход.

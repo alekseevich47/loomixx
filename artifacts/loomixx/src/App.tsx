@@ -341,6 +341,19 @@ function SelectionBrush() {
           return;
         }
 
+        // Главная: brush только для текста в AI-чате; иначе сбрасываем выделение
+        const homeShell = document.querySelector('.site-shell--home');
+        if (homeShell) {
+          const node = selection.anchorNode;
+          const el = node instanceof Element ? node : node?.parentElement;
+          if (!el?.closest('.ai-msg, .ai-input')) {
+            selection.removeAllRanges();
+            document.documentElement.classList.remove('selection-brush-active');
+            setPaths([]);
+            return;
+          }
+        }
+
         const rects = Array.from(selection.getRangeAt(0).getClientRects())
           .filter((rect) => rect.width > 1 && rect.height > 1)
           .map((rect) => ({

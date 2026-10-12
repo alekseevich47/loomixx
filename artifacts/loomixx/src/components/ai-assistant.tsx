@@ -6,6 +6,7 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type Ref,
 } from 'react';
@@ -35,7 +36,27 @@ export const AI_LOADING_PHRASES = [
   'Перехват сигнала от дизайнера-ежа… ещё секунда...',
   'Ищем ответ между Figma и продом...',
   'Варим свежий CSS на медленном огне...',
+  'Гоняем баги по кругу, пока не выберут мирную профессию...',
+  'Спрашиваем у кота-продакта, что ответить боссу...',
+  'Разогреваем нейросеть в микроволновке на средней мощности...',
+  'Переводим «сделайте красиво» на язык инженеров...',
+  'Чиним капчу от космоса — почти прошли...',
+  'Склеиваем JSX скотчем и хорошим настроением...',
+  'Договариваемся с сервером, чтобы он не был вредным...',
+  'Ищем кнопку «сделать хорошо» — она точно где-то была...',
+  'Калибруем чувство вкуса по шкале slime...',
 ] as const;
+
+function shuffleLoadingOrder(): number[] {
+  const order = AI_LOADING_PHRASES.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = order[i]!;
+    order[i] = order[j]!;
+    order[j] = tmp;
+  }
+  return order;
+}
 
 const SUGGESTIONS_HOME = [
   'Сколько стоит сайт?',
@@ -136,8 +157,8 @@ function writeAiHistory(messages: AiMessage[]) {
 /** Локальный fallback, если API недоступен. */
 export function buildAiFallbackReply(_question?: string): string {
   return (
-    `Пока я не могу ответить на этот вопрос подробно. ` +
-    `Напишите в Telegram ${AI_CONTACT.telegram} или на почту ${AI_CONTACT.email} — подскажем по услугам, срокам и формату.`
+    `Пока я не могу ответить на этот вопрос подробно, босс. ` +
+    `Напишите моему боссу в Telegram ${AI_CONTACT.telegram} или на почту ${AI_CONTACT.email} — подскажем по услугам, срокам и формату.`
   );
 }
 
@@ -244,21 +265,43 @@ function useTypewriterPlaceholder(phrases: readonly string[], enabled: boolean) 
 
 function useLoadingPhrase(active: boolean) {
   const reduceMotion = useReducedMotion();
-  const [index, setIndex] = useState(0);
+  const orderRef = useRef<number[]>([]);
+  const cursorRef = useRef(0);
+  const [phrase, setPhrase] = useState(() => AI_LOADING_PHRASES[0]!);
 
   useEffect(() => {
-    if (!active) {
-      setIndex(0);
-      return;
-    }
+    if (!active) return;
+
+    orderRef.current = shuffleLoadingOrder();
+    cursorRef.current = 0;
+    const first = orderRef.current[0] ?? 0;
+    setPhrase(AI_LOADING_PHRASES[first] ?? AI_LOADING_PHRASES[0]!);
+
     if (reduceMotion) return;
+
     const id = window.setInterval(() => {
-      setIndex((current) => (current + 1) % AI_LOADING_PHRASES.length);
+      cursorRef.current += 1;
+      if (cursorRef.current >= orderRef.current.length) {
+        const prevLast = orderRef.current.at(-1);
+        let next = shuffleLoadingOrder();
+        // не повторяем ту же фразу сразу на стыке колод
+        if (next[0] === prevLast && next.length > 1) {
+          const swapWith = 1 + Math.floor(Math.random() * (next.length - 1));
+          const tmp = next[0]!;
+          next[0] = next[swapWith]!;
+          next[swapWith] = tmp;
+        }
+        orderRef.current = next;
+        cursorRef.current = 0;
+      }
+      const idx = orderRef.current[cursorRef.current] ?? 0;
+      setPhrase(AI_LOADING_PHRASES[idx] ?? AI_LOADING_PHRASES[0]!);
     }, LOADING_ROTATE_MS);
+
     return () => window.clearInterval(id);
   }, [active, reduceMotion]);
 
-  return AI_LOADING_PHRASES[index] ?? AI_LOADING_PHRASES[0];
+  return phrase;
 }
 
 function readEditableText(el: HTMLElement) {
@@ -283,7 +326,7 @@ function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
 
 type ScrollThumb = { top: number; height: number; visible: boolean };
 
-/** Кастомный скролл: нативный скрыт (без стрелок Win), тонкая lime-полоска. */
+/** Кастомный скролл: нативный скрыт, proximity-зона + drag без выделения. */
 function useAiScrollRail(syncKey: unknown) {
   const viewportRef = useRef<HTMLElement | null>(null);
   const [thumb, setThumb] = useState<ScrollThumb>({ top: 0, height: 0, visible: false });
@@ -324,16 +367,9 @@ function useAiScrollRail(syncKey: unknown) {
   return { viewportRef, thumb, sync };
 }
 
-function AiScrollThumb({ thumb }: { thumb: ScrollThumb }) {
-  if (!thumb.visible) return null;
-  return (
-    <div className="ai-scroll-rail" aria-hidden="true">
-      <div
-        className="ai-scroll-thumb"
-        style={{ height: thumb.height, transform: `translateY(${thumb.top}px)` }}
-      />
-    </div>
-  );
+function clearDomSelection() {
+  const selection = window.getSelection();
+  if (selection && !selection.isCollapsed) selection.removeAllRanges();
 }
 
 function AiScrollBox({
@@ -347,10 +383,103 @@ function AiScrollBox({
   viewportClassName?: string;
   syncKey?: unknown;
 }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const railRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ pointerId: number; startY: number; startScroll: number } | null>(null);
   const { viewportRef, thumb, sync } = useAiScrollRail(syncKey);
+  const [near, setNear] = useState(false);
+  const [dragging, setDragging] = useState(false);
+
+  const scrollFromRailY = useCallback((clientY: number) => {
+    const viewport = viewportRef.current;
+    const rail = railRef.current;
+    if (!viewport || !rail) return;
+    const { scrollHeight, clientHeight } = viewport;
+    const maxScroll = scrollHeight - clientHeight;
+    if (maxScroll <= 0) return;
+    const railRect = rail.getBoundingClientRect();
+    const thumbH = Math.max(18, (clientHeight / scrollHeight) * railRect.height);
+    const y = clientY - railRect.top - thumbH / 2;
+    const maxTop = Math.max(1, railRect.height - thumbH);
+    viewport.scrollTop = (Math.min(Math.max(y, 0), maxTop) / maxTop) * maxScroll;
+  }, [viewportRef]);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (event: PointerEvent) => {
+      const drag = dragRef.current;
+      const viewport = viewportRef.current;
+      const rail = railRef.current;
+      if (!drag || !viewport || !rail || event.pointerId !== drag.pointerId) return;
+      event.preventDefault();
+      clearDomSelection();
+      const { scrollHeight, clientHeight } = viewport;
+      const maxScroll = scrollHeight - clientHeight;
+      if (maxScroll <= 0) return;
+      const railH = rail.getBoundingClientRect().height;
+      const thumbH = Math.max(18, (clientHeight / scrollHeight) * railH);
+      const track = Math.max(1, railH - thumbH);
+      const delta = ((event.clientY - drag.startY) / track) * maxScroll;
+      viewport.scrollTop = Math.min(Math.max(drag.startScroll + delta, 0), maxScroll);
+    };
+    const onUp = (event: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      dragRef.current = null;
+      setDragging(false);
+      document.body.classList.remove('ai-scroll-dragging');
+    };
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      document.body.classList.remove('ai-scroll-dragging');
+    };
+  }, [dragging, viewportRef]);
+
+  const onRailPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    clearDomSelection();
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const target = event.target as HTMLElement;
+    const onThumb = target.classList.contains('ai-scroll-thumb');
+    if (!onThumb) scrollFromRailY(event.clientY);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startScroll: viewport.scrollTop,
+    };
+    setDragging(true);
+    document.body.classList.add('ai-scroll-dragging');
+    railRef.current?.setPointerCapture?.(event.pointerId);
+  };
+
+  const onHostPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const host = hostRef.current;
+    if (!host || !thumb.visible) {
+      if (near) setNear(false);
+      return;
+    }
+    const rect = host.getBoundingClientRect();
+    const distFromRight = rect.right - event.clientX;
+    setNear(distFromRight >= 0 && distFromRight <= 18);
+  };
 
   return (
-    <div className={`ai-scroll-host ${className}`.trim()}>
+    <div
+      ref={hostRef}
+      className={`ai-scroll-host${near || dragging ? ' is-scroll-near' : ''}${dragging ? ' is-scroll-dragging' : ''} ${className}`.trim()}
+      onPointerMove={onHostPointerMove}
+      onPointerLeave={() => {
+        if (!dragging) setNear(false);
+      }}
+    >
       <div
         ref={viewportRef as Ref<HTMLDivElement>}
         className={`ai-scroll-viewport ${viewportClassName}`.trim()}
@@ -358,7 +487,19 @@ function AiScrollBox({
       >
         {children}
       </div>
-      <AiScrollThumb thumb={thumb} />
+      {thumb.visible ? (
+        <div
+          ref={railRef}
+          className="ai-scroll-rail"
+          aria-hidden="true"
+          onPointerDown={onRailPointerDown}
+        >
+          <div
+            className="ai-scroll-thumb"
+            style={{ height: thumb.height, transform: `translateY(${thumb.top}px)` }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -460,15 +601,19 @@ function AiPanel({ suggestions, path, autoFocus = false }: AiPanelProps) {
 
   return (
     <div className="ai-panel-inner">
+      <header className="ai-panel-header" data-testid="ai-panel-header">
+        <BrandMark className="ai-brand-mark--slime" />
+        <span className="ai-panel-title">Люмик</span>
+        <span className="ai-panel-status">(на связи)</span>
+      </header>
+
       {showThread ? (
         <AiScrollBox className="ai-thread-scroll" syncKey={threadSyncKey}>
           <div className="ai-thread" data-testid="ai-thread">
             {messages.map((message) =>
               message.role === 'user' ? (
                 <div key={message.id} className="ai-msg ai-msg-user" data-testid="ai-user-message">
-                  <AiScrollBox viewportClassName="ai-msg-body" syncKey={message.text}>
-                    {message.text}
-                  </AiScrollBox>
+                  <div className="ai-msg-body">{message.text}</div>
                 </div>
               ) : (
                 <div
@@ -478,9 +623,9 @@ function AiPanel({ suggestions, path, autoFocus = false }: AiPanelProps) {
                   aria-live="polite"
                   data-testid="ai-reply"
                 >
-                  <AiScrollBox viewportClassName="ai-msg-body" syncKey={message.text}>
+                  <div className="ai-msg-body">
                     <AiReplyText text={message.text} />
-                  </AiScrollBox>
+                  </div>
                 </div>
               ),
             )}
@@ -488,9 +633,7 @@ function AiPanel({ suggestions, path, autoFocus = false }: AiPanelProps) {
             {busy ? (
               <div className="ai-msg ai-msg-loading" role="status" aria-live="polite" data-testid="ai-loading">
                 <BrandMark className="ai-brand-mark--thinking" />
-                <AiScrollBox viewportClassName="ai-msg-body" syncKey={loadingPhrase}>
-                  {loadingPhrase}
-                </AiScrollBox>
+                <div className="ai-msg-body">{loadingPhrase}</div>
               </div>
             ) : null}
             <div ref={threadEndRef} className="ai-thread-end" aria-hidden="true" />
@@ -547,7 +690,14 @@ function AiPanel({ suggestions, path, autoFocus = false }: AiPanelProps) {
                   document.execCommand('insertText', false, text);
                 }}
               />
-              <AiScrollThumb thumb={inputThumb} />
+              {inputThumb.visible ? (
+                <div className="ai-scroll-rail" aria-hidden="true">
+                  <div
+                    className="ai-scroll-thumb"
+                    style={{ height: inputThumb.height, transform: `translateY(${inputThumb.top}px)` }}
+                  />
+                </div>
+              ) : null}
             </div>
           </div>
           <button
