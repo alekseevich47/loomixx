@@ -71,7 +71,7 @@ Loomixx — публичный сайт продуктовой студии: л�
 - Контракт: `lib/api-spec/openapi.yaml` → schemas `AiChatRequest` / `AiChatAnswer` / `ApiErrorBody`.
 - Сервер: `artifacts/api-server/src/routes/ai.ts` + `src/ai/{system-prompt,knowledge}.ts` + `src/lib/{deepseek,rate-limit}.ts`.
 - Ключ **только на сервере**: `DEEPSEEK_API_KEY` (опц. `DEEPSEEK_MODEL`, default `deepseek-flash` / V4.1-Flash; `thinking: disabled` для быстрых ответов). Без ключа API отвечает fallback-текстом, фронт не падает.
-- Тон: пользователь = «босс»; при нехватке данных — «напишите моему боссу» + контакты (`src/ai/system-prompt.ts`).
+- Тон: «босс» = только владелец/разработчик Loomixx; посетителя на «вы», не называть боссом; при нехватке данных — «напишите моему боссу» + контакты (`src/ai/system-prompt.ts`).
 - Клиент: `aiChat` из `@workspace/api-client-react` в `AiPanel` (`ai-assistant.tsx`); при сетевой/5xx ошибке — локальный fallback с контактами.
 - Dev proxy: Vite `server.proxy["/api"]` → `API_PROXY_TARGET` (default `http://127.0.0.1:3001`). См. корневой `.env.example`.
 
@@ -160,7 +160,7 @@ Loomixx — публичный сайт продуктовой студии: л�
   - placeholder typewriter: при открытии панели текст **пустой**, затем печатается (`useState('')` + reset при `!enabled`); не инициализировать `phrases[0]` — иначе полный плейсхолдер мелькает до старта анимации; `prefers-reduced-motion` → сразу первая фраза;
   - user-msg `max-width:75%`, assistant = ширина строки; текст сообщений растёт, скролл — у треда;
   - **выделение:** `/` (`.site-shell--home`) — `user-select:none`, исключение только `.ai-msg` / `.ai-input`; SelectionBrush на home сбрасывает selection вне AI; chips/header/rail — без select;
-  - тон Люмика: пользователя называет «босс»; контакты — «напишите моему боссу…» (`system-prompt.ts` + fallback);
+  - тон Люмика: «босс» = владелец студии; посетителя не называть боссом; контакты — «напишите моему боссу…» (`system-prompt.ts` + fallback);
   - loading: `AI_LOADING_PHRASES` (14 шт.), `useLoadingPhrase` — shuffle-колода на каждый busy, ротация без сразу-повтора на стыке;
   - SelectionBrush `z-index:50` + `mix-blend-mode`; ответы через `POST /api/ai/chat` (DeepSeek); fallback → `@alekseevich47` / `loomixx.dev@yandex.ru`; ссылки в ответе — `AiReplyText`.
 - **Sticky header** — см. Routing; править только `.topbar` / `.topbar-inner` в `index.css` + разметку `Header` в `App.tsx`; не вешать sticky на отдельные страницы.
