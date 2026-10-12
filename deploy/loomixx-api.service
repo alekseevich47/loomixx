@@ -1,0 +1,20 @@
+[Unit]
+Description=loomixx API (Люмик / DeepSeek)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/loomixx
+EnvironmentFile=-/etc/loomixx/api.env
+Environment=NODE_ENV=production
+Environment=PORT=3001
+ExecStart=/usr/bin/node --enable-source-maps /var/www/loomixx/artifacts/api-server/dist/index.mjs
+Restart=on-failure
+RestartSec=3
+# Не логировать секреты в journal
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

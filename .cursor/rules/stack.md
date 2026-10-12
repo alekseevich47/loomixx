@@ -118,6 +118,13 @@ Loomixx — публичный сайт продуктовой студии: л�
 - Typecheck: `pnpm run typecheck` (libs project refs + artifacts).
 - Корень Replit-ориентирован; артефакты описаны в `artifacts/*/.replit-artifact/artifact.toml`.
 
+### Deploy / local run
+
+- **Прод** (`/var/www/loomixx`): `./deploy.sh` — git pull, build SPA + api-server, `systemctl restart loomixx-api`, nginx reload.
+- **Один раз на сервере:** `/etc/loomixx/api.env` (`DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL=deepseek-flash`, chmod 600); unit `deploy/loomixx-api.service` → `/etc/systemd/system/`; nginx `location /api/` из `deploy/nginx-api.snippet.conf`.
+- **Локально:** скопируй `.env.example` → `.env`, заполни ключ; `./build_local.sh` (в `.gitignore`, не в git) поднимает API `:3001` + Vite с proxy.
+- SPA ходит на относительный `/api/*`; в prod nginx проксирует на `127.0.0.1:3001`.
+
 ## UI / brand patterns
 
 - Бренд-сигнал: слово **loomixx** + mark `l` (lime, скошенный круг) — hero-level, не только nav.

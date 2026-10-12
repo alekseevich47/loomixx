@@ -40,3 +40,4 @@ test-results/
 
 # Optional local deploy overrides
 *.local.sh
+build_local.sh
