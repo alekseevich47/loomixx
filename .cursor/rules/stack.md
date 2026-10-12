@@ -27,12 +27,13 @@ Loomixx — публичный сайт продуктовой студии: л�
 | ---- | ------- | ---- |
 | `artifacts/loomixx` | `@workspace/loomixx` | Публичный сайт студии (основной продукт этого репо) |
 | `artifacts/api-server` | `@workspace/api-server` | Express API (`/api/*`) |
-| `artifacts/mockup-sandbox` | `@workspace/mockup-sandbox` | Песочница мокапов (dev), не прод-сайт |
-| `lib/api-spec` | `@workspace/api-spec` | OpenAPI + Orval codegen |
+| `artifacts/mockup-sandbox` | `@workspace/mockup-sandbox` | Песочница мокапов (dev); **не билдить и не отдавать на прод** |
+| `lib/api-spec` | `@workspace/api-spec` | OpenAPI + Orval codegen (задел под API) |
 | `lib/api-zod` | `@workspace/api-zod` | Zod-схемы/типы с сервера (generated) |
 | `lib/api-client-react` | `@workspace/api-client-react` | TanStack Query hooks + `customFetch` (generated) |
-| `lib/db` | `@workspace/db` | Drizzle schema + `db` pool |
-| `scripts` | — | Утилиты воркспейса |
+| `lib/db` | `@workspace/db` | Drizzle schema + `db` pool (пока пустая схема) |
+| `scripts` | — | Утилиты воркспейса (не runtime прода) |
+| `deploy.sh` | — | Прод-деплой на VPS (см. Infra) |
 
 ### Routing (frontend)
 
@@ -80,7 +81,7 @@ Loomixx — публичный сайт продуктовой студии: л�
 | Area | Choice |
 | ---- | ------ |
 | Framework | React 19 + TypeScript 5.9 |
-| Bundler | Vite 7 (`PORT`, `BASE_PATH` обязательны) |
+| Bundler | Vite 7 (`PORT` и `BASE_PATH` **обязательны** даже для `build`; на проде: `PORT=4173`, `BASE_PATH=/`) |
 | Routing | wouter |
 | Styles | Tailwind CSS v4 + кастомный бренд-CSS в `src/index.css` |
 | UI kit | shadcn/ui (style `new-york`, Radix) в `src/components/ui/*` |
@@ -150,9 +151,11 @@ Loomixx — публичный сайт продуктовой студии: л�
   - старт: анимированный logo (`.ai-fab` + slime) **по центру снизу**;
   - авто-раскрытие панели **только на `/`** (через 3с **после** splash); на остальных — каждые 5с nudge «тык-тык» (`.ai-fab.is-nudge`), пока закрыт;
   - клик **вне** блока → схлапывание в logo; клик по logo → открыть;
+  - **история сессии:** `sessionStorage` ключ `loomixx-ai-history` (до закрытия вкладки); закрытие панели / смена страницы не сбрасывает диалог; при reopen — полный тред; лимит 40 сообщений; `.ai-thread-scroll` max-height `min(48vh, 420px)`;
   - chips через `suggestionsForPath`; поле + кастомный скролл + slime send — как раньше;
+  - кастомный скролл (`.ai-scroll-rail` / `.ai-scroll-thumb`): нативный скрыт; rail `pointer-events:auto`; hover → ширина 3→8px, `transition:width .22s ease` (off при `prefers-reduced-motion`);
   - placeholder typewriter: при открытии панели текст **пустой**, затем печатается (`useState('')` + reset при `!enabled`); не инициализировать `phrases[0]` — иначе полный плейсхолдер мелькает до старта анимации; `prefers-reduced-motion` → сразу первая фраза;
-  - user-msg `max-width:75%`, assistant = ширина строки, max 3 строки;
+  - user-msg `max-width:75%`, assistant = ширина строки; `.ai-msg-body` max-height = **6 строк** (`calc(13px * 1.55 * 6)`);
   - SelectionBrush `z-index:50` + `mix-blend-mode`; ответы через `POST /api/ai/chat` (DeepSeek); fallback → `@alekseevich47` / `loomixx.dev@yandex.ru`; ссылки в ответе — `AiReplyText`.
 - **Sticky header** — см. Routing; править только `.topbar` / `.topbar-inner` в `index.css` + разметку `Header` в `App.tsx`; не вешать sticky на отдельные страницы.
 - **Shared Shell** — не возвращать `<Shell>` внутрь page-компонентов; иначе снова remount Header/AiDock и ломается бесшовный переход.
@@ -185,12 +188,16 @@ Loomixx — публичный сайт продуктовой студии: л�
 - Не тянуть Recharts/Embla/тяжёлые ui-компоненты на лендинг без использования.
 - API: фоновые побочные эффекты (почта, CRM) — вне request path или через очередь, когда появятся.
 
-## Infra (текущее состояние)
+## Infra (прод)
 
-- Локально/Replit: два процесса — Vite frontend + Express API.
-- Прод-хост/домен сайта в этом репо **ещё не зафиксированы** (Beauty+ домены из `stack_app.md` сюда не переносить).
-- Observability на старте: pino на API; клиентский error boundary + console.
-- Документация операционки: по мере деплоя дополнять `replit.md` / `docs/*`.
+- **Домен:** `loomixx.ru` (+ `www.loomixx.ru`). Beauty+ хосты (`beauty.*` / `beautyadm.*` из `stack_app.md`) сюда не переносить.
+- **Код на VPS:** `/var/www/loomixx` (git clone репозитория).
+- **Прод сейчас — только статика:** nginx отдаёт `artifacts/loomixx/dist/public`. Node/`api-server` на проде **не обязателен**, пока нет реальных эндпоинтов кроме задела.
+- **Nginx (паттерн VPS как у calc/shashlik):** HTTP `:80` → ACME + редирект HTTPS; HTTPS `listen 127.0.0.1:8443 ssl` (внешний TLS/терминация на хосте). SPA: `try_files $uri $uri/ /index.html`. Кэш: `/assets/` долго (хэши Vite), `index.html` — `no-cache`. Конфиг сайта: `/etc/nginx/sites-available/loomixx`.
+- **Деплой:** корневой `./deploy.sh` на сервере — `git pull` → `pnpm install --frozen-lockfile` → `PORT=4173 BASE_PATH=/ pnpm --filter @workspace/loomixx run build` → `nginx -t` + reload. После ребута VPS билд заново не нужен: nginx + уже собранный `dist/` достаточны.
+- **Локально:** Vite frontend (+ Express API при работе с API). Сборка без env упадёт — всегда передавать `PORT` и `BASE_PATH`.
+- **Git:** `.gitignore` — `node_modules/`, `dist/`, `graphify-out/`, `*.tsbuildinfo`, `.env*`. Не коммитить сборки и зависимости.
+- Observability: pino на API (когда подключён); клиентский error boundary + console.
 
 ## Agent workflow
 
@@ -199,6 +206,7 @@ Loomixx — публичный сайт продуктовой студии: л�
 3. Новая таблица → `lib/db/src/schema/<name>.ts` → export → `db push` (dev).
 4. Не смешивать с Beauty+ архитектурой (NestJS, Centrifugo, Telegram initData, entitlements) — это другой продукт.
 5. После правок кода при наличии graphify: `graphify update .`.
+6. Прод-обновление сайта → правки в репо → на сервере `./deploy.sh` (не собирать `mockup-sandbox`).
 
 ## Do / Don't
 
@@ -206,7 +214,9 @@ Loomixx — публичный сайт продуктовой студии: л�
 - ✅ Сохранять бренд-CSS и шрифты; новые секции в том же визуальном языке.
 - ✅ Честно помечать демо-поведение (как у контактной формы), пока нет бэка.
 - ✅ Использовать `@workspace/*` пакеты вместо копипасты типов/fetch.
+- ✅ На проде собирать только `@workspace/loomixx`; env билда — в `deploy.sh`.
 - ❌ Не подменять стек на Nest/Next/Turborepo «по привычке» из `stack_app.md`.
-- ❌ Не коммитить секреты; не отключать `minimumReleaseAge`.
+- ❌ Не коммитить секреты, `node_modules`, `dist`, `graphify-out`; не отключать `minimumReleaseAge`.
 - ❌ Не выдавать концепты портфолио за клиентские кейсы в копирайте.
 - ❌ Не подключать `@workspace/db` в API «на будущее» без реальных запросов — пустой импорт уронит процесс без `DATABASE_URL`.
+- ❌ Не вешать заглушку `loomixx.ru` в `default` nginx — ломает ACME/Let's Encrypt.

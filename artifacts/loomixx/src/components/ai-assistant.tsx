@@ -88,6 +88,50 @@ const LOADING_ROTATE_MS = 2200;
 const AUTO_OPEN_MS = 3000;
 const NUDGE_EVERY_MS = 5000;
 const EASE = [0.22, 1, 0.36, 1] as const;
+/** История диалога до закрытия вкладки */
+const AI_HISTORY_KEY = 'loomixx-ai-history';
+const AI_HISTORY_MAX = 40;
+
+type AiRole = 'user' | 'assistant';
+type AiMessage = { id: string; role: AiRole; text: string };
+
+function newAiMessageId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `m-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function readAiHistory(): AiMessage[] {
+  try {
+    const raw = sessionStorage.getItem(AI_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is AiMessage => {
+        if (!item || typeof item !== 'object') return false;
+        const row = item as Record<string, unknown>;
+        return (
+          typeof row.id === 'string' &&
+          (row.role === 'user' || row.role === 'assistant') &&
+          typeof row.text === 'string' &&
+          row.text.length > 0
+        );
+      })
+      .slice(-AI_HISTORY_MAX);
+  } catch {
+    return [];
+  }
+}
+
+function writeAiHistory(messages: AiMessage[]) {
+  try {
+    sessionStorage.setItem(AI_HISTORY_KEY, JSON.stringify(messages.slice(-AI_HISTORY_MAX)));
+  } catch {
+    /* sessionStorage unavailable / quota */
+  }
+}
 
 /** Локальный fallback, если API недоступен. */
 export function buildAiFallbackReply(_question?: string): string {
@@ -327,11 +371,11 @@ type AiPanelProps = {
 
 function AiPanel({ suggestions, path, autoFocus = false }: AiPanelProps) {
   const [value, setValue] = useState('');
-  const [userMessage, setUserMessage] = useState<string | null>(null);
-  const [reply, setReply] = useState<string | null>(null);
+  const [messages, setMessages] = useState<AiMessage[]>(() => readAiHistory());
   const [busy, setBusy] = useState(false);
   const [bubbling, setBubbling] = useState(false);
   const editableRef = useRef<HTMLDivElement>(null);
+  const threadEndRef = useRef<HTMLDivElement>(null);
   const {
     viewportRef: inputScrollRef,
     thumb: inputThumb,
@@ -339,8 +383,9 @@ function AiPanel({ suggestions, path, autoFocus = false }: AiPanelProps) {
   } = useAiScrollRail(value);
   const showPlaceholder = value.trim().length === 0;
   const placeholder = useTypewriterPlaceholder(AI_PLACEHOLDERS, showPlaceholder);
-  const loadingPhrase = useLoadingPhrase(busy && !reply);
-  const showThread = Boolean(userMessage || reply || busy);
+  const loadingPhrase = useLoadingPhrase(busy);
+  const showThread = messages.length > 0 || busy;
+  const threadSyncKey = `${messages.length}:${busy ? loadingPhrase : messages.at(-1)?.id ?? ''}`;
 
   useLayoutEffect(() => {
     autosizeEditable(editableRef.current);
@@ -352,6 +397,16 @@ function AiPanel({ suggestions, path, autoFocus = false }: AiPanelProps) {
     const id = window.setTimeout(() => editableRef.current?.focus(), 220);
     return () => window.clearTimeout(id);
   }, [autoFocus]);
+
+  useLayoutEffect(() => {
+    threadEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [threadSyncKey]);
+
+  const persistMessages = useCallback((next: AiMessage[]) => {
+    const trimmed = next.slice(-AI_HISTORY_MAX);
+    setMessages(trimmed);
+    writeAiHistory(trimmed);
+  }, []);
 
   const clearEditable = () => {
     const el = editableRef.current;
@@ -372,20 +427,22 @@ function AiPanel({ suggestions, path, autoFocus = false }: AiPanelProps) {
     const question = raw.trim();
     if (!question || busy) return;
     pulseBubble();
+    const userMsg: AiMessage = { id: newAiMessageId(), role: 'user', text: question };
+    persistMessages([...messages, userMsg]);
     setBusy(true);
-    setReply(null);
-    setUserMessage(question);
     clearEditable();
 
     void (async () => {
+      let answer = buildAiFallbackReply(question);
       try {
         const result = await aiChat({ question, path });
-        setReply(result.answer || buildAiFallbackReply(question));
+        answer = result.answer || answer;
       } catch {
-        setReply(buildAiFallbackReply(question));
-      } finally {
-        setBusy(false);
+        /* fallback already set */
       }
+      const assistantMsg: AiMessage = { id: newAiMessageId(), role: 'assistant', text: answer };
+      persistMessages([...readAiHistory(), assistantMsg]);
+      setBusy(false);
     })();
   };
 
@@ -404,32 +461,41 @@ function AiPanel({ suggestions, path, autoFocus = false }: AiPanelProps) {
   return (
     <div className="ai-panel-inner">
       {showThread ? (
-        <div className="ai-thread" data-testid="ai-thread">
-          {userMessage ? (
-            <div className="ai-msg ai-msg-user" data-testid="ai-user-message">
-              <AiScrollBox viewportClassName="ai-msg-body" syncKey={userMessage}>
-                {userMessage}
-              </AiScrollBox>
-            </div>
-          ) : null}
+        <AiScrollBox className="ai-thread-scroll" syncKey={threadSyncKey}>
+          <div className="ai-thread" data-testid="ai-thread">
+            {messages.map((message) =>
+              message.role === 'user' ? (
+                <div key={message.id} className="ai-msg ai-msg-user" data-testid="ai-user-message">
+                  <AiScrollBox viewportClassName="ai-msg-body" syncKey={message.text}>
+                    {message.text}
+                  </AiScrollBox>
+                </div>
+              ) : (
+                <div
+                  key={message.id}
+                  className="ai-msg ai-msg-assistant"
+                  role="status"
+                  aria-live="polite"
+                  data-testid="ai-reply"
+                >
+                  <AiScrollBox viewportClassName="ai-msg-body" syncKey={message.text}>
+                    <AiReplyText text={message.text} />
+                  </AiScrollBox>
+                </div>
+              ),
+            )}
 
-          {busy && !reply ? (
-            <div className="ai-msg ai-msg-loading" role="status" aria-live="polite" data-testid="ai-loading">
-              <BrandMark className="ai-brand-mark--thinking" />
-              <AiScrollBox viewportClassName="ai-msg-body" syncKey={loadingPhrase}>
-                {loadingPhrase}
-              </AiScrollBox>
-            </div>
-          ) : null}
-
-          {reply ? (
-            <div className="ai-msg ai-msg-assistant" role="status" aria-live="polite" data-testid="ai-reply">
-              <AiScrollBox viewportClassName="ai-msg-body" syncKey={reply}>
-                <AiReplyText text={reply} />
-              </AiScrollBox>
-            </div>
-          ) : null}
-        </div>
+            {busy ? (
+              <div className="ai-msg ai-msg-loading" role="status" aria-live="polite" data-testid="ai-loading">
+                <BrandMark className="ai-brand-mark--thinking" />
+                <AiScrollBox viewportClassName="ai-msg-body" syncKey={loadingPhrase}>
+                  {loadingPhrase}
+                </AiScrollBox>
+              </div>
+            ) : null}
+            <div ref={threadEndRef} className="ai-thread-end" aria-hidden="true" />
+          </div>
+        </AiScrollBox>
       ) : null}
 
       <div className="ai-chips" role="list" aria-label="Примеры вопросов">
@@ -577,7 +643,7 @@ export function AiDock() {
       <AnimatePresence mode="wait">
         {open ? (
           <motion.div
-            key={`panel-${location}`}
+            key="panel"
             className="ai-dock-panel"
             data-testid="ai-dock-panel"
             initial={reduceMotion ? false : { opacity: 0, y: 22, scale: 0.78 }}
@@ -586,11 +652,11 @@ export function AiDock() {
             transition={{ duration: reduceMotion ? 0 : 0.4, ease: EASE }}
             style={{ transformOrigin: 'bottom center' }}
           >
-            <AiPanel key={location} suggestions={suggestions} path={location} autoFocus />
+            <AiPanel suggestions={suggestions} path={location} autoFocus />
           </motion.div>
         ) : (
           <motion.button
-            key={`fab-${location}`}
+            key="fab"
             type="button"
             className={`ai-fab${nudge ? ' is-nudge' : ''}`}
             aria-label="Открыть ассистента"
