@@ -602,9 +602,13 @@ function AiPanel({ suggestions, path, autoFocus = false }: AiPanelProps) {
   return (
     <div className="ai-panel-inner">
       <header className="ai-panel-header" data-testid="ai-panel-header">
-        <BrandMark className="ai-brand-mark--slime" />
-        <span className="ai-panel-title">Люмик</span>
-        <span className="ai-panel-status">(на связи)</span>
+        <div className="ai-panel-brand">
+          <BrandMark className="ai-brand-mark--slime" />
+          <span className="ai-panel-title-wrap">
+            <span className="ai-panel-title">Люмик</span>
+            <span className="ai-panel-online" title="на связи" aria-label="на связи" />
+          </span>
+        </div>
       </header>
 
       {showThread ? (

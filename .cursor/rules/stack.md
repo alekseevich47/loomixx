@@ -153,7 +153,7 @@ Loomixx — публичный сайт продуктовой студии: л�
   - старт: анимированный logo (`.ai-fab` + slime) **по центру снизу**;
   - авто-раскрытие панели **только на `/`** (через 3с **после** splash); на остальных — каждые 5с nudge «тык-тык» (`.ai-fab.is-nudge`), пока закрыт;
   - клик **вне** блока → схлапывание в logo; клик по logo → открыть;
-  - **header панели** (`.ai-panel-header`, непрозрачный): slime-mark + «Люмик» + `(на связи)` (mono, слегка зелёный);
+  - **header панели** (`.ai-panel-header`, непрозрачный, контент по центру): slime-mark + «Люмик» + зелёный online-dot справа сверху (`.ai-panel-online`, pulse «тык-тык…тык…», glow; off при `prefers-reduced-motion`);
   - **история сессии:** `sessionStorage` ключ `loomixx-ai-history` (до закрытия вкладки); закрытие панели / смена страницы не сбрасывает диалог; при reopen — полный тред; лимит 40 сообщений; `.ai-thread-scroll` max-height `min(48vh, 420px)`;
   - chips через `suggestionsForPath`; поле + кастомный скролл + slime send — как раньше;
   - кастомный скролл: нативный скрыт; **proximity** ~14px у правого края (`is-scroll-near`) → thumb 3→8px; **drag** thumb/rail без text-selection (`body.ai-scroll-dragging`, `preventDefault` + clear selection); колесо над сообщениями крутит **тред** (без вложенного scroll в `.ai-msg-body`);
