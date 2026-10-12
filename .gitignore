@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+build/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Graphify (local code graph cache)
+graphify-out/
+
+# Logs & OS
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editors / local
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# Vite / test / coverage
+.vite/
+coverage/
+playwright-report/
+test-results/
+
+# Replit local store
+.local/
+
+# Optional local deploy overrides
+*.local.sh

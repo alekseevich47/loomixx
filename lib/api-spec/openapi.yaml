@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
+  version: 0.2.0
   description: API specification
 servers:
   - url: /api
@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: ai
+    description: AI assistant (Люмик)
 paths:
   /healthz:
     get:
@@ -24,6 +26,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /ai/chat:
+    post:
+      operationId: aiChat
+      tags: [ai]
+      summary: Ask the studio AI assistant
+      description: >
+        Sends a user question to DeepSeek with studio system prompt + knowledge.
+        Falls back to contact redirect when the model is unavailable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiChatRequest"
+      responses:
+        "200":
+          description: Assistant answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiChatAnswer"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+        "429":
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+        "503":
+          description: Upstream AI unavailable (caller may show local fallback)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +74,40 @@ components:
           type: string
       required:
         - status
-
+    AiChatRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - question
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: User question about the studio
+        path:
+          type: string
+          maxLength: 200
+          description: Current frontend route for context (e.g. /services)
+    AiChatAnswer:
+      type: object
+      additionalProperties: false
+      required:
+        - answer
+        - source
+      properties:
+        answer:
+          type: string
+        source:
+          type: string
+          enum: [deepseek, fallback]
+    ApiErrorBody:
+      type: object
+      additionalProperties: false
+      required:
+        - message
+      properties:
+        message:
+          type: string
+        code:
+          type: string

@@ -62,8 +62,16 @@ Loomixx — публичный сайт продуктовой студии: л�
 | Method | Path | Notes |
 | ------ | ---- | ----- |
 | GET | `/api/healthz` | Health; ответ валидируется Zod (`HealthCheckResponse`) |
+| POST | `/api/ai/chat` | DeepSeek chat; body `AiChatRequest`, ответ `AiChatAnswer`; rate limit; без ключа → soft fallback |
 
 Новые эндпоинты: сначала OpenAPI → `pnpm --filter @workspace/api-spec run codegen` → реализация в `artifacts/api-server/src/routes/*` + подключение в `routes/index.ts`.
+
+**AI (DeepSeek):**
+- Контракт: `lib/api-spec/openapi.yaml` → schemas `AiChatRequest` / `AiChatAnswer` / `ApiErrorBody`.
+- Сервер: `artifacts/api-server/src/routes/ai.ts` + `src/ai/{system-prompt,knowledge}.ts` + `src/lib/{deepseek,rate-limit}.ts`.
+- Ключ **только на сервере**: `DEEPSEEK_API_KEY` (опц. `DEEPSEEK_MODEL`, default `deepseek-flash` / V4.1-Flash; `thinking: disabled` для быстрых ответов). Без ключа API отвечает fallback-текстом, фронт не падает.
+- Клиент: `aiChat` из `@workspace/api-client-react` в `AiPanel` (`ai-assistant.tsx`); при сетевой/5xx ошибке — локальный fallback с контактами.
+- Dev proxy: Vite `server.proxy["/api"]` → `API_PROXY_TARGET` (default `http://127.0.0.1:3001`). См. корневой `.env.example`.
 
 ## Stack
 
@@ -101,7 +109,7 @@ Loomixx — публичный сайт продуктовой студии: л�
 - **OpenAPI 3.1** — единственный source of truth для публичных контрактов (`title` должен оставаться `Api` — иначе ломаются пути Orval).
 - **Zod:** catalog `zod` ^3; Orval zod output pinned to v3.
 - **PostgreSQL + Drizzle** — когда появятся таблицы: модели в `lib/db/src/schema/*`, реэкспорт из `schema/index.ts`, apply через `pnpm --filter @workspace/db run push` (dev).
-- Env: `DATABASE_URL` (db), `PORT` (оба процесса), `BASE_PATH` (frontend Vite).
+- Env: `DATABASE_URL` (db), `PORT` (оба процесса), `BASE_PATH` (frontend Vite), `API_PROXY_TARGET` (Vite → API), `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` (api-server).
 
 ### Tooling / supply chain
 
@@ -138,7 +146,7 @@ Loomixx — публичный сайт продуктовой студии: л�
   - chips через `suggestionsForPath`; поле + кастомный скролл + slime send — как раньше;
   - placeholder typewriter: при открытии панели текст **пустой**, затем печатается (`useState('')` + reset при `!enabled`); не инициализировать `phrases[0]` — иначе полный плейсхолдер мелькает до старта анимации; `prefers-reduced-motion` → сразу первая фраза;
   - user-msg `max-width:75%`, assistant = ширина строки, max 3 строки;
-  - SelectionBrush `z-index:50` + `mix-blend-mode`; fallback → `@alekseevich47` / `loomixx.dev@yandex.ru`.
+  - SelectionBrush `z-index:50` + `mix-blend-mode`; ответы через `POST /api/ai/chat` (DeepSeek); fallback → `@alekseevich47` / `loomixx.dev@yandex.ru`; ссылки в ответе — `AiReplyText`.
 - **Sticky header** — см. Routing; править только `.topbar` / `.topbar-inner` в `index.css` + разметку `Header` в `App.tsx`; не вешать sticky на отдельные страницы.
 - **Shared Shell** — не возвращать `<Shell>` внутрь page-компонентов; иначе снова remount Header/AiDock и ломается бесшовный переход.
 - Визуальный язык: тёплый paper (`--paper` / cream background), ink, lime accent (`--lime` / primary green), orange accent; display-типографика Unbounded с сильным negative tracking.

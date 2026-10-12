@@ -9,6 +9,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
+import { aiChat } from '@workspace/api-client-react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useLocation } from 'wouter';
 
@@ -83,17 +84,41 @@ const GAP_MS = 420;
 const INPUT_MIN_PX = 52;
 /** 3 видимые строки: padding 10+10 + 14px * 1.45 * 3 */
 const INPUT_MAX_PX = Math.round(20 + 14 * 1.45 * 3);
-const REPLY_DELAY_MS = 1500;
 const LOADING_ROTATE_MS = 2200;
 const AUTO_OPEN_MS = 3000;
 const NUDGE_EVERY_MS = 5000;
 const EASE = [0.22, 1, 0.36, 1] as const;
 
-/** Заглушка до подключения базы знаний / LLM. */
-export function buildAiFallbackReply(_question: string): string {
+/** Локальный fallback, если API недоступен. */
+export function buildAiFallbackReply(_question?: string): string {
   return (
     `Пока я не могу ответить на этот вопрос подробно. ` +
     `Напишите в Telegram ${AI_CONTACT.telegram} или на почту ${AI_CONTACT.email} — подскажем по услугам, срокам и формату.`
+  );
+}
+
+function AiReplyText({ text }: { text: string }) {
+  const parts = text.split(/(@alekseevich47|loomixx\.dev@yandex\.ru)/g);
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (part === AI_CONTACT.telegram) {
+          return (
+            <a key={index} href={AI_CONTACT.telegramUrl} target="_blank" rel="noreferrer">
+              {part}
+            </a>
+          );
+        }
+        if (part === AI_CONTACT.email) {
+          return (
+            <a key={index} href={AI_CONTACT.emailUrl}>
+              {part}
+            </a>
+          );
+        }
+        return <span key={index}>{part}</span>;
+      })}
+    </>
   );
 }
 
@@ -296,10 +321,11 @@ function AiScrollBox({
 
 type AiPanelProps = {
   suggestions: readonly string[];
+  path?: string;
   autoFocus?: boolean;
 };
 
-function AiPanel({ suggestions, autoFocus = false }: AiPanelProps) {
+function AiPanel({ suggestions, path, autoFocus = false }: AiPanelProps) {
   const [value, setValue] = useState('');
   const [userMessage, setUserMessage] = useState<string | null>(null);
   const [reply, setReply] = useState<string | null>(null);
@@ -350,10 +376,17 @@ function AiPanel({ suggestions, autoFocus = false }: AiPanelProps) {
     setReply(null);
     setUserMessage(question);
     clearEditable();
-    window.setTimeout(() => {
-      setReply(buildAiFallbackReply(question));
-      setBusy(false);
-    }, REPLY_DELAY_MS);
+
+    void (async () => {
+      try {
+        const result = await aiChat({ question, path });
+        setReply(result.answer || buildAiFallbackReply(question));
+      } catch {
+        setReply(buildAiFallbackReply(question));
+      } finally {
+        setBusy(false);
+      }
+    })();
   };
 
   const onSubmit = (event: FormEvent) => {
@@ -392,13 +425,7 @@ function AiPanel({ suggestions, autoFocus = false }: AiPanelProps) {
           {reply ? (
             <div className="ai-msg ai-msg-assistant" role="status" aria-live="polite" data-testid="ai-reply">
               <AiScrollBox viewportClassName="ai-msg-body" syncKey={reply}>
-                Пока я не могу ответить на этот вопрос подробно. Напишите в Telegram{' '}
-                <a href={AI_CONTACT.telegramUrl} target="_blank" rel="noreferrer">
-                  {AI_CONTACT.telegram}
-                </a>{' '}
-                или на почту{' '}
-                <a href={AI_CONTACT.emailUrl}>{AI_CONTACT.email}</a>
-                {' — подскажем по услугам, срокам и формату.'}
+                <AiReplyText text={reply} />
               </AiScrollBox>
             </div>
           ) : null}
@@ -559,7 +586,7 @@ export function AiDock() {
             transition={{ duration: reduceMotion ? 0 : 0.4, ease: EASE }}
             style={{ transformOrigin: 'bottom center' }}
           >
-            <AiPanel key={location} suggestions={suggestions} autoFocus />
+            <AiPanel key={location} suggestions={suggestions} path={location} autoFocus />
           </motion.div>
         ) : (
           <motion.button
